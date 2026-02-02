@@ -53,12 +53,17 @@ This file is pushed to the cloud, allowing your frontend to automatically build 
 ### Prerequisites
 *   Docker Desktop installed.
 
-### Run Verification Locally
-1.  Place your `.fmu` and `tests/` folder into `inputs/`.
-2.  Run:
+### 1. Run Verification (Batch Mode)
+    Use this to test if your FMU is valid.
     ```powershell
     docker build -t fmu-validator -f docker/Dockerfile .
-    docker run fmu-validator
+    docker run fmu-validator python /app/scripts/run_tests.py
+    ```
+
+### 2. Run Server (Interactive Mode)
+    Use this to start the API and control the simulation.
+    ```powershell
+    docker run -p 8000:8000 fmu-validator
     ```
 ## 5. Runtime Mode (FastAPI Server)
 This template is **Dual-Purpose**.

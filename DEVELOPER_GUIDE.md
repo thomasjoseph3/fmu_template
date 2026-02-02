@@ -47,7 +47,7 @@ Before submitting, verify your package using our Validator Tool.
     ```powershell
     # In the fmu_template directory
     docker build -t fmu-validator -f docker/Dockerfile .
-    docker run fmu-validator
+    docker run fmu-validator python /app/scripts/run_tests.py
     ```
 
 ### Interpreting Functionality
