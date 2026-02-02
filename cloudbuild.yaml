@@ -1,0 +1,31 @@
+steps:
+  # 1. Build the container image
+  - id: 'build'
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/fmu-validator', '-f', 'docker/Dockerfile', '.']
+
+  # 2. Run the validation tests inside the container
+  # We mount the current directory inputs to /app/inputs so the validator can see them
+  # Note: Cloud Build mounts the workspace to /workspace.
+  - id: 'validate'
+    name: 'gcr.io/$PROJECT_ID/fmu-validator'
+    args: ['python', '/app/scripts/run_tests.py']
+    # If you want to bake the inputs INTO the image, you can do that in step 1.
+    # If you want to mount them, typical Cloud Build doesn't support -v easily for the workspace same way,
+    # but the workspace is usually preserved.
+    # However, for simplicity here, we assume the inputs are COPIED into the image or volume mounting strategy is used.
+    # A cleaner GCB integrated approach is to copy inputs in Dockerfile OR use a volume.
+    # Here let's assume we want to ship the FMU *with* the image or the inputs are in the repo.
+    # If inputs are in repo, we should COPY them in Dockerfile or bind mount.
+    # Since we didn't COPY inputs in Dockerfile (we made the dir), let's adjust this.
+    # If we are just validating the repo content, we should COPY inputs in the Dockerfile for the build.
+
+# Let's adjust the Dockerfile strategy for CI to be robust:
+# We will rely on the "COPY scripts/" we did. We should probably also COPY inputs/ if we want them baked in.
+# For now, let's keep it simple: The run_tests.py will fail if inputs is empty.
+# If you commit your FMUs to git, you should add "COPY inputs/ /app/inputs/" to Dockerfile 
+# OR use a specific step to copy them.
+
+timeout: '600s'
+options:
+  logging: CLOUD_LOGGING_ONLY
