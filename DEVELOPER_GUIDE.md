@@ -42,7 +42,19 @@ Your handover package is simply a folder structure. You do not need to write Pyt
 ## 4. Verifying Locally
 Before submitting, verify your package using our Validator Tool.
 
-1.  **Copy** your files into the `fmu_template/inputs/` directory of this repo.
+1.  **Preparation**:
+    *   Open the `fmu_template/inputs/` directory in this repo.
+    *   **Delete** any existing files there.
+    *   **Copy** your `.fmu` file and your `tests/` folder directly into `fmu_template/inputs/`.
+
+    *Correct Structure check:*
+    ```text
+    fmu_template/inputs/
+    ├── MyModel.fmu
+    └── tests/
+        ├── stimuli.csv
+        └── reference.csv
+    ```
 2.  **Run** the check:
     ```powershell
     # In the fmu_template directory
