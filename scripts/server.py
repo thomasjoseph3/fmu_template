@@ -17,8 +17,8 @@ logger = logging.getLogger("fmu-server")
 app = FastAPI(title="FMU Simulation Server")
 
 # Global State: Dictionary to hold active FMU instances
-# Key: fmu_id (filename without ext), Value: FMU2Slave instance
-active_fmus: Dict[str, FMU2Slave] = {}
+# Key: fmu_id (filename without ext), Value: Dict containing 'instance' and 'md'
+active_fmus: Dict[str, Dict[str, Any]] = {}
 fmu_paths: Dict[str, str] = {}
 
 class StepRequest(BaseModel):
@@ -37,9 +37,13 @@ def load_fmu_map():
         logger.error(f"Inputs directory {INPUTS_DIR} not found!")
         return
 
-    files = glob.glob(os.path.join(INPUTS_DIR, "*.fmu"))
+    files = glob.glob(os.path.join(INPUTS_DIR, "**", "*.fmu"), recursive=True)
     for f in files:
         fmu_id = os.path.splitext(os.path.basename(f))[0]
+        # Check for ID collision
+        if fmu_id in fmu_paths:
+            logger.warning(f"Duplicate FMU ID found: {fmu_id} (Skipping {f})")
+            continue
         fmu_paths[fmu_id] = f
         logger.info(f"Registered FMU: {fmu_id} -> {f}")
 
@@ -93,8 +97,8 @@ def initialize_fmu(fmu_id: str, start_time: float = 0.0):
     # If already open, cleanup
     if fmu_id in active_fmus:
         try:
-            active_fmus[fmu_id].terminate()
-            active_fmus[fmu_id].freeInstance()
+            active_fmus[fmu_id]['instance'].terminate()
+            active_fmus[fmu_id]['instance'].freeInstance()
         except:
             pass
         del active_fmus[fmu_id]
@@ -118,7 +122,12 @@ def initialize_fmu(fmu_id: str, start_time: float = 0.0):
         fmu.enterInitializationMode()
         fmu.exitInitializationMode()
         
-        active_fmus[fmu_id] = fmu
+        # STORE BOTH INSTANCE AND METADATA
+        active_fmus[fmu_id] = {
+            "instance": fmu,
+            "md": md,
+            "time": start_time
+        }
         logger.info(f"FMU {fmu_id} initialized at t={start_time}")
         
         return {"status": "initialized", "time": start_time}
@@ -133,19 +142,15 @@ def step_simulation(fmu_id: str, request: StepRequest):
     if fmu_id not in active_fmus:
         raise HTTPException(status_code=400, detail="FMU not initialized. Call /initialize first.")
     
-    fmu = active_fmus[fmu_id]
+    # UNPACK
+    fmu_data = active_fmus[fmu_id]
+    fmu = fmu_data['instance']
+    md = fmu_data['md']
     
     try:
         # 1. Set Inputs
-        # FMPy requires mapping variable names to VR (Value References)
-        # For simplicity in this template, we assume the user knows the variable names
-        # and we iterate to find them. 
-        # CAUTION: This is slow if doing lookup every step. 
-        # Optimization: Cache VR lookup map.
-        
-        # Helper: Get VR map
-        # Note: In a production server, cache this!
-        vr_map = {v.name: v.valueReference for v in fmu.modelDescription.modelVariables}
+        # Use stored 'md' instead of 'fmu.modelDescription'
+        vr_map = {v.name: v.valueReference for v in md.modelVariables}
         
         vrs_to_set = []
         values_to_set = []
@@ -155,24 +160,22 @@ def step_simulation(fmu_id: str, request: StepRequest):
                 vrs_to_set.append(vr_map[name])
                 values_to_set.append(value)
             else:
-                pass # Ignore unknown inputs or log warning
+                pass # Ignore unknown inputs
         
         if vrs_to_set:
             fmu.setReal(vrs_to_set, values_to_set)
         
         # 2. Do Step
-        current_time = fmu.time
+        current_time = fmu_data['time']
         fmu.doStep(currentCommunicationPoint=current_time, communicationStepSize=request.dt)
+        fmu_data['time'] += request.dt
         
         # 3. Get Outputs
-        # Retrieve all outputs? Or just specific ones?
-        # For now, let's retrieve all outputs.
-        # Optimization: Allow client to specify requested outputs in body.
         outputs = {}
         out_vrs = []
         out_names = []
         
-        for v in fmu.modelDescription.modelVariables:
+        for v in md.modelVariables:
             if v.causality == 'output':
                 out_vrs.append(v.valueReference)
                 out_names.append(v.name)
@@ -183,7 +186,7 @@ def step_simulation(fmu_id: str, request: StepRequest):
                 outputs[out_names[i]] = val
         
         return {
-            "time": fmu.time, 
+            "time": fmu_data['time'], 
             "outputs": outputs, 
             "status": "ok"
         }

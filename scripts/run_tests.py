@@ -135,49 +135,61 @@ def main():
         print(f"Error: {INPUTS_DIR} not found.")
         sys.exit(1)
 
-    fmu_files = glob.glob(os.path.join(INPUTS_DIR, "*.fmu"))
+    # Find all FMUs recursively
+    fmu_files = glob.glob(os.path.join(INPUTS_DIR, "**", "*.fmu"), recursive=True)
     if not fmu_files:
         print(f"No .fmu files found in {INPUTS_DIR}")
         sys.exit(1)
         
-    fmu_path = fmu_files[0] # Assume standardized package has one FMU
-    print(f"Found FMU: {fmu_path}")
-
-    # 1. Look for Standard Tests
-    tests_dir = os.path.join(INPUTS_DIR, "tests")
-    stimuli = os.path.join(tests_dir, "stimuli.csv")
-    reference = os.path.join(tests_dir, "reference.csv")
-
-    tests_passed = True
+    print(f"Found {len(fmu_files)} FMUs to validate.")
     
-    if os.path.exists(stimuli) and os.path.exists(reference):
-        tests_passed = run_regression_test(fmu_path, stimuli, reference)
-    else:
-        print("Warning: Standard 'tests/stimuli.csv' and 'tests/reference.csv' not found.")
-        print("Skipping regression test. Basic load test only.")
-        try:
-            dump(fmu_path)
-            print("Basic load test passed.")
-        except Exception as e:
-            print(f"Basic load test failed: {e}")
-            tests_passed = False
+    all_tests_passed = True
+    all_meta_success = True
+    
+    for fmu_path in fmu_files:
+        fmu_name = os.path.splitext(os.path.basename(fmu_path))[0]
+        print(f"\n=== Processing FMU: {fmu_name} ===")
+        print(f"Path: {fmu_path}")
+        
+        # 1. Look for Local Tests (Sibling directory)
+        fmu_dir = os.path.dirname(fmu_path)
+        tests_dir = os.path.join(fmu_dir, "tests")
+        stimuli = os.path.join(tests_dir, "stimuli.csv")
+        reference = os.path.join(tests_dir, "reference.csv")
+        
+        current_passed = True
+        
+        if os.path.exists(stimuli) and os.path.exists(reference):
+            if not run_regression_test(fmu_path, stimuli, reference):
+                current_passed = False
+                all_tests_passed = False
+        else:
+            print(f"Warning: No standard tests found in {tests_dir}")
+            print("Running basic load test only.")
+            try:
+                # Basic load test
+                md = read_model_description(fmu_path)
+                print(f"Basic load test passed: {md.modelName}")
+            except Exception as e:
+                print(f"Basic load test failed: {e}")
+                current_passed = False
+                all_tests_passed = False
+        
+        # 2. Extract Metadata (Specific Manifest)
+        manifest_path = os.path.join(fmu_dir, f"{fmu_name}_manifest.json")
+        if not extract_metadata(fmu_path, manifest_path):
+            all_meta_success = False
 
-    # 2. Extract Metadata (Manifest)
-    meta_success = extract_metadata(fmu_path, MANIFEST_FILE)
-
-    # 2. Extract Metadata (Manifest)
-    meta_success = extract_metadata(fmu_path, MANIFEST_FILE)
-
-    if not tests_passed:
-        print("!!! Validation FAILED !!!")
+    if not all_tests_passed:
+        print("\n!!! Some Validation Tests FAILED !!!")
         sys.exit(1)
         
-    if not meta_success:
-        print("!!! Metadata Extraction FAILED !!!")
+    if not all_meta_success:
+        print("\n!!! Some Metadata Extraction FAILED !!!")
         sys.exit(1)
 
     # 3. Server Startup Smoke Test
-    print("--- Running Server Smoke Test ---")
+    print("\n--- Running Server Smoke Test ---")
     try:
         # Ensure we can import from the root /app directory
         sys.path.append(os.getcwd()) 
@@ -193,14 +205,21 @@ def main():
             print(f"!!! Server Health Check FAILED: {response.status_code} !!!")
             sys.exit(1)
             
-        # Verify the FMU we just validated is listed
+        # Verify all found FMUs are discovered by the server
         fmus_resp = client.get("/fmus")
-        fmu_id = os.path.splitext(os.path.basename(fmu_path))[0]
-        if fmu_id in fmus_resp.json():
-            print(f"Server Discovery Check: PASS (Found {fmu_id})")
+        server_fmus = fmus_resp.json()
+        
+        missing_fmus = []
+        for f in fmu_files:
+             fid = os.path.splitext(os.path.basename(f))[0]
+             if fid not in server_fmus:
+                 missing_fmus.append(fid)
+        
+        if not missing_fmus:
+             print(f"Server Discovery Check: PASS (All {len(server_fmus)} FMUs found)")
         else:
-            print(f"!!! Server did not discover the included FMU: {fmu_id} !!!")
-            sys.exit(1)
+             print(f"!!! Server failed to discover: {missing_fmus} !!!")
+             sys.exit(1)
 
     except Exception as e:
         print(f"!!! Server Check FAILED: {e}")
@@ -208,7 +227,7 @@ def main():
         traceback.print_exc()
         sys.exit(1)
 
-    print("=== All Steps Passed (Validation + Documentation + Server Check) ===")
+    print("\n=== All Steps Passed (Batch Validation + Metadata + Server Check) ===")
 
 if __name__ == "__main__":
     main()
