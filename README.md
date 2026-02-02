@@ -60,6 +60,31 @@ This file is pushed to the cloud, allowing your frontend to automatically build 
     docker build -t fmu-validator -f docker/Dockerfile .
     docker run fmu-validator
     ```
-3.  Check output:
-    *   ✅ **PASS**: "All Steps Passed"
-    *   ❌ **FAIL**: "Variable 'x' max deviation 0.05 > 1e-3"
+## 5. Runtime Mode (FastAPI Server)
+This template is **Dual-Purpose**.
+1.  **CI/CD**: Runs `run_tests.py` to validate the FMU.
+2.  **Runtime**: Runs `server.py` to expose a REST API for controlling the simulation.
+
+When you deploy this image to Cloud Run or Kubernetes, it automatically starts the Server.
+
+### API Endpoints
+*   `GET /fmus`: List available models.
+*   `GET /fmus/{id}/metadata`: Get variables and units.
+*   `POST /fmus/{id}/initialize`: Start/Restart simulation.
+*   `POST /fmus/{id}/step`: Advance simulation.
+    *   **Body**: `{"inputs": {"valve": 0.5}, "dt": 0.1}`
+    *   **Response**: `{"time": 0.1, "outputs": {"temp": 300.1}}`
+
+### Example Usage (Python Client)
+```python
+import requests
+
+# 1. Initialize
+requests.post("http://localhost:8000/fmus/my_model/initialize")
+
+# 2. Step Loop
+for i in range(100):
+    resp = requests.post("http://localhost:8000/fmus/my_model/step", 
+                         json={"inputs": {"u": 1.0}, "dt": 0.1})
+    print(resp.json())
+```

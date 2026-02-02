@@ -28,5 +28,7 @@ COPY scripts/ /app/scripts/
 RUN mkdir -p /app/inputs
 COPY inputs/ /app/inputs/
 
-# Default command: run the validation script
-CMD ["python", "/app/scripts/run_tests.py"]
+# Default command: Run the FastAPI server
+# This makes the image deployable as a Runtime Service.
+# For CI validation, we override this CMD with "python /app/scripts/run_tests.py"
+CMD ["uvicorn", "scripts.server:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -165,6 +165,9 @@ def main():
     # 2. Extract Metadata (Manifest)
     meta_success = extract_metadata(fmu_path, MANIFEST_FILE)
 
+    # 2. Extract Metadata (Manifest)
+    meta_success = extract_metadata(fmu_path, MANIFEST_FILE)
+
     if not tests_passed:
         print("!!! Validation FAILED !!!")
         sys.exit(1)
@@ -173,7 +176,39 @@ def main():
         print("!!! Metadata Extraction FAILED !!!")
         sys.exit(1)
 
-    print("=== All Steps Passed (Validation + Documentation) ===")
+    # 3. Server Startup Smoke Test
+    print("--- Running Server Smoke Test ---")
+    try:
+        # Ensure we can import from the root /app directory
+        sys.path.append(os.getcwd()) 
+        from fastapi.testclient import TestClient
+        from scripts.server import app
+        
+        client = TestClient(app)
+        response = client.get("/health")
+        
+        if response.status_code == 200:
+            print(f"Server Health Check: PASS ({response.json()})")
+        else:
+            print(f"!!! Server Health Check FAILED: {response.status_code} !!!")
+            sys.exit(1)
+            
+        # Verify the FMU we just validated is listed
+        fmus_resp = client.get("/fmus")
+        fmu_id = os.path.splitext(os.path.basename(fmu_path))[0]
+        if fmu_id in fmus_resp.json():
+            print(f"Server Discovery Check: PASS (Found {fmu_id})")
+        else:
+            print(f"!!! Server did not discover the included FMU: {fmu_id} !!!")
+            sys.exit(1)
+
+    except Exception as e:
+        print(f"!!! Server Check FAILED: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+    print("=== All Steps Passed (Validation + Documentation + Server Check) ===")
 
 if __name__ == "__main__":
     main()
