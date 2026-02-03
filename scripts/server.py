@@ -112,6 +112,31 @@ def get_metadata(fmu_id: str):
         logger.error(f"Error reading metadata: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/fmus/{fmu_id}/manifest")
+def get_manifest(fmu_id: str):
+    """Get the auto-generated manifest.json for this FMU (includes all metadata)."""
+    if fmu_id not in fmu_paths:
+        raise HTTPException(status_code=404, detail="FMU not found")
+    
+    # Look for {fmu_id}_manifest.json next to the FMU
+    fmu_dir = os.path.dirname(fmu_paths[fmu_id])
+    manifest_path = os.path.join(fmu_dir, f"{fmu_id}_manifest.json")
+    
+    if not os.path.exists(manifest_path):
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Manifest not found. Run validation to generate {fmu_id}_manifest.json"
+        )
+    
+    try:
+        import json
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        return manifest
+    except Exception as e:
+        logger.error(f"Error reading manifest: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/fmus/{fmu_id}/initialize")
 def initialize_fmu(fmu_id: str, request: InitRequest = Body(default=InitRequest())):
     """Initialize or Re-initialize the FMU simulation."""

@@ -8,7 +8,6 @@ import numpy as np
 from fmpy import simulate_fmu, dump, read_model_description
 
 INPUTS_DIR = "/app/inputs"
-MANIFEST_FILE = "/app/inputs/manifest.json"
 
 def extract_metadata(fmu_path, output_path):
     print(f"--- Extracting Metadata to {output_path} ---")

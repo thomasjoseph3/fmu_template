@@ -75,21 +75,47 @@ The validator reads `modelDescription.xml` inside the FMU and generates `manifes
 This file is pushed to the cloud, allowing your frontend to automatically build UI forms.
 
 ## 5. Quick Start
+
 ### Prerequisites
-*   Docker Desktop installed.
+*   Docker Desktop installed
+*   Make (included on Linux/Mac, install via Chocolatey on Windows: `choco install make`)
 
-### 1. Run Verification (Batch Mode)
-    Use this to test if your FMU is valid.
-    ```powershell
-    docker build -t fmu-validator -f docker/Dockerfile .
-    docker run fmu-validator python /app/scripts/run_tests.py
-    ```
+### Quick Commands (Recommended)
 
-### 2. Run Server (Interactive Mode)
-    Use this to start the API and control the simulation.
-    ```powershell
-    docker run -p 8000:8000 fmu-validator
-    ```
+**Validate FMUs (Run Tests):**
+```bash
+make validate
+```
+
+**Start API Server:**
+```bash
+make run-server
+```
+
+**Test API Endpoints:**
+```bash
+make test-api
+```
+
+**View All Commands:**
+```bash
+make help
+```
+
+### Alternative: Direct Docker Commands
+
+If you don't have `make`, use these commands:
+
+**1. Run Verification (Batch Mode):**
+```powershell
+docker build -t fmu-validator -f docker/Dockerfile .
+docker run fmu-validator python /app/scripts/run_tests.py
+```
+
+**2. Run Server (Interactive Mode):**
+```powershell
+docker run -p 8000:8000 fmu-validator
+```
 ## 5. Runtime Mode (FastAPI Server)
 This template is **Dual-Purpose**.
 1.  **CI/CD**: Runs `run_tests.py` to validate the FMU.
@@ -142,7 +168,31 @@ GET /fmus/{fmu_id}/metadata
 }
 ```
 
-#### 4. Initialize Simulation
+#### 4. Get Complete Manifest
+```bash
+GET /fmus/{fmu_id}/manifest
+```
+**Response:** (Auto-generated during validation)
+```json
+{
+  "fmiVersion": "2.0",
+  "modelName": "CounterFlowNTU",
+  "guid": "...",
+  "generationTool": "Dymola Version 2023x",
+  "description": "Counter flow heat exchanger model",
+  "variables": [
+    {
+      "name": "sourceA.T0_par",
+      "type": "Real",
+      "causality": "parameter",
+      "unit": "K",
+      "description": "Hot fluid inlet temperature"
+    }
+  ]
+}
+```
+
+#### 5. Initialize Simulation
 ```bash
 POST /fmus/{fmu_id}/initialize
 Content-Type: application/json
@@ -227,8 +277,53 @@ done
 
 - **[FMU_STANDARD.md](FMU_STANDARD.md)** - Package structure specification and YAML schema
 - **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** - Complete guide for FMU developers
+- **[SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)** - High-level overview and developer onboarding
 
-## 7. Cloud Deployment
+## 7. CI/CD Integration
+
+The Makefile makes integration trivial in any CI/CD platform:
+
+### GitHub Actions
+```yaml
+name: FMU Validation
+on: [push]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Validate FMUs
+        run: make validate
+```
+
+### GitLab CI
+```yaml
+validate:
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - make validate
+```
+
+### Jenkins
+```groovy
+stage('Validate') {
+  steps {
+    sh 'make validate'
+  }
+}
+```
+
+### Azure Pipelines
+```yaml
+- task: Bash@3
+  inputs:
+    targetType: 'inline'
+    script: 'make validate'
+```
+
+## 8. Cloud Deployment
 
 To deploy to Google Cloud Run:
 ```bash

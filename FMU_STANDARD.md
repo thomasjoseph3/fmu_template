@@ -54,7 +54,10 @@ When this package is pushed to the cloud, the CI pipeline performs the following
 2.  **Simulation**: Runs `model.fmu` using `stimuli.csv` as input.
 3.  **Regression Test**: Compares the simulation output against `reference.csv`.
     *   **Tolerance**: The build fails if results deviate by more than **1e-3** (configurable).
-4.  **Metadata Extraction**: Extracts variable definitions to create `manifest.json`.
+4.  **Metadata Extraction**: Extracts variable definitions to create `{model_name}_manifest.json`.
+    *   Saved alongside the FMU (e.g., `inputs/v1/MyModel_manifest.json`)
+    *   Contains FMI version, model name, GUID, and all input/output/parameter variables
+    *   Accessible via API: `GET /fmus/{id}/manifest`
 5.  **Deployment**: Publishes the package if all tests pass.
 
 ## 4. API Configuration (model.yaml)
