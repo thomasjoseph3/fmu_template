@@ -1,0 +1,53 @@
+# FMU Configuration File
+# This file defines the API interface for the FMU
+
+metadata:
+  name: "Counter Flow Heat Exchanger"
+  version: "1.0"
+  description: "NTU method heat exchanger model for glycol-air system"
+  author: "FMU Developer"
+
+# Parameters: Set once during initialization
+# These are design constants that configure the simulation
+parameters:
+  - name: "sourceA.T0_par"
+    label: "Glycol Inlet Temperature"
+    description: "Hot fluid (glycol) inlet temperature"
+    unit: "K"
+    default: 333.15
+    min: 273.15
+    max: 373.15
+  
+  - name: "sourceB.T0_par"
+    label: "Air Inlet Temperature"
+    description: "Cold fluid (air) inlet temperature"
+    unit: "K"
+    default: 293.15
+    min: 253.15
+    max: 323.15
+
+# Runtime Inputs: Can be changed at every simulation step
+# For this FMU, there are no runtime inputs (parameters are set at init)
+inputs: []
+
+# Outputs: Values returned from each simulation step
+outputs:
+  - name: "multiSensor_Tpm.T"
+    label: "Hot Fluid Inlet Temp"
+    description: "Measured temperature at hot fluid inlet"
+    unit: "K"
+  
+  - name: "multiSensor_Tpm1.T"
+    label: "Hot Fluid Outlet Temp"
+    description: "Measured temperature at hot fluid outlet"
+    unit: "K"
+  
+  - name: "multiSensor_Tpm2.T"
+    label: "Cold Fluid Outlet Temp"
+    description: "Measured temperature at cold fluid outlet"
+    unit: "K"
+  
+  - name: "multiSensor_Tpm3.T"
+    label: "Cold Fluid Inlet Temp"
+    description: "Measured temperature at cold fluid inlet"
+    unit: "K"

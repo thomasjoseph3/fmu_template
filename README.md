@@ -98,6 +98,144 @@ This template is **Dual-Purpose**.
 When you deploy this image to Cloud Run or Kubernetes, it automatically starts the Server.
 
 ### API Endpoints
+
+The server exposes a REST API for real-time simulation control.
+
+#### 1. Health Check
+```bash
+GET /health
+```
+**Response:**
+```json
+{
+  "status": "ok",
+  "fmus_loaded": ["CounterFlowNTU", "CounterFlowNTU_v2"]
+}
+```
+
+#### 2. List Available FMUs
+```bash
+GET /fmus
+```
+**Response:**
+```json
+["CounterFlowNTU", "CounterFlowNTU_v2"]
+```
+
+#### 3. Get FMU Metadata
+```bash
+GET /fmus/{fmu_id}/metadata
+```
+**Response:**
+```json
+{
+  "modelName": "CounterFlowNTU",
+  "variables": [
+    {
+      "name": "sourceA.T0_par",
+      "type": "Real",
+      "causality": "parameter",
+      "unit": "K",
+      "description": "Hot fluid inlet temperature"
+    }
+  ]
+}
+```
+
+#### 4. Initialize Simulation
+```bash
+POST /fmus/{fmu_id}/initialize
+Content-Type: application/json
+
+{
+  "start_time": 0.0,
+  "parameters": {
+    "sourceA.T0_par": 353.15,
+    "sourceB.T0_par": 288.15
+  }
+}
+```
+**Response:**
+```json
+{
+  "status": "initialized",
+  "time": 0.0
+}
+```
+
+#### 5. Step Simulation
+```bash
+POST /fmus/{fmu_id}/step
+Content-Type: application/json
+
+{
+  "inputs": {
+    "valve.position": 0.8
+  },
+  "dt": 0.1
+}
+```
+**Response:**
+```json
+{
+  "time": 0.1,
+  "outputs": {
+    "multiSensor_Tpm.T": 80.0,
+    "multiSensor_Tpm1.T": 56.94,
+    "multiSensor_Tpm2.T": 45.31,
+    "multiSensor_Tpm3.T": 15.0
+  },
+  "status": "ok"
+}
+```
+
+#### 6. Reset Simulation
+```bash
+POST /fmus/{fmu_id}/reset
+```
+
+### Example Workflow
+
+**Scenario Testing (Parameters):**
+```bash
+# 1. Initialize with custom design parameters
+curl -X POST "http://localhost:8000/fmus/HeatExchanger/initialize" \
+  -H "Content-Type: application/json" \
+  -d '{"parameters": {"sourceA.T0_par": 353.15}}'
+
+# 2. Run simulation (no runtime inputs needed)
+curl -X POST "http://localhost:8000/fmus/HeatExchanger/step" \
+  -H "Content-Type: application/json" \
+  -d '{"dt": 0.1}'
+```
+
+**Digital Twin (Runtime Inputs):**
+```bash
+# 1. Initialize with fixed design parameters
+curl -X POST "http://localhost:8000/fmus/Pump/initialize" \
+  -d '{"parameters": {"pump.diameter": 0.2}}'
+
+# 2. Send live sensor data every second
+while true; do
+  curl -X POST "http://localhost:8000/fmus/Pump/step" \
+    -d '{"inputs": {"speed_cmd": 1450}, "dt": 1.0}'
+  sleep 1
+done
+```
+
+## 6. Documentation Files
+
+- **[FMU_STANDARD.md](FMU_STANDARD.md)** - Package structure specification and YAML schema
+- **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** - Complete guide for FMU developers
+
+## 7. Cloud Deployment
+
+To deploy to Google Cloud Run:
+```bash
+gcloud builds submit --config cloudbuild.yaml
+```
+
+The server automatically starts on port 8000 and is ready for traffic.
 *   `GET /fmus`: List available models.
 *   `GET /fmus/{id}/metadata`: Get variables and units.
 *   `POST /fmus/{id}/initialize`: Start/Restart simulation.

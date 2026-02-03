@@ -2,6 +2,7 @@ import os
 import glob
 import shutil
 import logging 
+import yaml
 from fastapi import FastAPI, HTTPException, Body
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
@@ -20,10 +21,15 @@ app = FastAPI(title="FMU Simulation Server")
 # Key: fmu_id (filename without ext), Value: Dict containing 'instance' and 'md'
 active_fmus: Dict[str, Dict[str, Any]] = {}
 fmu_paths: Dict[str, str] = {}
+fmu_configs: Dict[str, Dict[str, Any]] = {}  # YAML configs
 
 class StepRequest(BaseModel):
     inputs: Dict[str, float]
     dt: float
+
+class InitRequest(BaseModel):
+    start_time: float = 0.0
+    parameters: Optional[Dict[str, float]] = None
 
 class StepResponse(BaseModel):
     time: float
@@ -49,6 +55,26 @@ def load_fmu_map():
 
 # Initialize on startup
 load_fmu_map()
+
+def load_configs():
+    """Load YAML configuration files for each FMU."""
+    for fmu_id, fmu_path in fmu_paths.items():
+        # Look for {fmu_name}.yaml in the same directory
+        fmu_dir = os.path.dirname(fmu_path)
+        config_path = os.path.join(fmu_dir, f"{fmu_id}.yaml")
+        
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f)
+                    fmu_configs[fmu_id] = config
+                    logger.info(f"Loaded config for {fmu_id}: {config.get('metadata', {}).get('name', fmu_id)}")
+            except Exception as e:
+                logger.error(f"Failed to load config for {fmu_id}: {e}")
+        else:
+            logger.info(f"No config found for {fmu_id}, using automatic detection")
+
+load_configs()
 
 # --- Endpoints ---
 
@@ -87,12 +113,14 @@ def get_metadata(fmu_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/fmus/{fmu_id}/initialize")
-def initialize_fmu(fmu_id: str, start_time: float = 0.0):
+def initialize_fmu(fmu_id: str, request: InitRequest = Body(default=InitRequest())):
     """Initialize or Re-initialize the FMU simulation."""
     if fmu_id not in fmu_paths:
         raise HTTPException(status_code=404, detail="FMU not found")
     
     path = fmu_paths[fmu_id]
+    start_time = request.start_time
+    parameters = request.parameters
     
     # If already open, cleanup
     if fmu_id in active_fmus:
@@ -119,6 +147,24 @@ def initialize_fmu(fmu_id: str, start_time: float = 0.0):
         
         fmu.instantiate()
         fmu.setupExperiment(startTime=start_time)
+        
+        # Apply parameters if provided (before entering init mode)
+        if parameters:
+            vr_map = {v.name: v.valueReference for v in md.modelVariables}
+            param_vrs = []
+            param_vals = []
+            
+            for param_name, param_value in parameters.items():
+                if param_name in vr_map:
+                    param_vrs.append(vr_map[param_name])
+                    param_vals.append(param_value)
+                    logger.info(f"Setting parameter {param_name} = {param_value}")
+                else:
+                    logger.warning(f"Parameter {param_name} not found in FMU")
+            
+            if param_vrs:
+                fmu.setReal(param_vrs, param_vals)
+        
         fmu.enterInitializationMode()
         fmu.exitInitializationMode()
         
@@ -175,10 +221,35 @@ def step_simulation(fmu_id: str, request: StepRequest):
         out_vrs = []
         out_names = []
         
-        for v in md.modelVariables:
-            if v.causality == 'output':
-                out_vrs.append(v.valueReference)
-                out_names.append(v.name)
+        # PRIORITY 1: Use YAML config if available
+        if fmu_id in fmu_configs and fmu_configs[fmu_id].get('outputs'):
+            logger.debug(f"Using YAML config outputs for {fmu_id}")
+            vr_map = {v.name: v.valueReference for v in md.modelVariables}
+            
+            for output_def in fmu_configs[fmu_id]['outputs']:
+                var_name = output_def['name']
+                if var_name in vr_map:
+                    out_vrs.append(vr_map[var_name])
+                    out_names.append(var_name)
+                else:
+                    logger.warning(f"YAML output '{var_name}' not found in FMU")
+        else:
+            # PRIORITY 2: Try FMI-standard outputs
+            for v in md.modelVariables:
+                if v.causality == 'output':
+                    out_vrs.append(v.valueReference)
+                    out_names.append(v.name)
+            
+            # PRIORITY 3: FALLBACK - If no outputs found, expose all Real variables
+            if not out_vrs:
+                logger.warning(f"FMU {fmu_id} has no FMI outputs. Falling back to all Real variables.")
+                for v in md.modelVariables:
+                    if v.type == 'Real' and v.variability != 'constant':
+                        try:
+                            out_vrs.append(v.valueReference)
+                            out_names.append(v.name)
+                        except:
+                            pass  # Skip variables that can't be accessed
         
         if out_vrs:
             res_values = fmu.getReal(out_vrs)
