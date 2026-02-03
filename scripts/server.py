@@ -90,7 +90,7 @@ def list_fmus():
 
 @app.get("/fmus/{fmu_id}/metadata")
 def get_metadata(fmu_id: str):
-    """Get variable names and descriptions."""
+    """Get variable names, descriptions, and version info."""
     if fmu_id not in fmu_paths:
         raise HTTPException(status_code=404, detail="FMU not found")
     
@@ -107,7 +107,15 @@ def get_metadata(fmu_id: str):
                     "unit": var.unit,
                     "description": var.description
                 })
-        return {"modelName": md.modelName, "variables": variables}
+        
+        # Add version info from YAML if available
+        version_info = {"modelName": md.modelName, "variables": variables}
+        if fmu_id in fmu_configs and 'metadata' in fmu_configs[fmu_id]:
+            version_info["version"] = fmu_configs[fmu_id]['metadata'].get('version', 'N/A')
+            version_info["description"] = fmu_configs[fmu_id]['metadata'].get('description', md.description)
+            version_info["author"] = fmu_configs[fmu_id]['metadata'].get('author', 'N/A')
+        
+        return version_info
     except Exception as e:
         logger.error(f"Error reading metadata: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -173,19 +181,37 @@ def initialize_fmu(fmu_id: str, request: InitRequest = Body(default=InitRequest(
         fmu.instantiate()
         fmu.setupExperiment(startTime=start_time)
         
-        # Apply parameters if provided (before entering init mode)
+        # Validate and apply parameters if provided
         if parameters:
-            vr_map = {v.name: v.valueReference for v in md.modelVariables}
+            md = read_model_description(path)
+            vr_map = {v.name: v.valueReference for v in md.modelVariables if v.causality == 'parameter'}
+            
+            # Validate all parameter names first
+            invalid_params = []
+            for param_name in parameters.keys():
+                if param_name not in vr_map:
+                    invalid_params.append(param_name)
+            
+            if invalid_params:
+                valid_params = list(vr_map.keys())
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "Invalid parameter names",
+                        "invalid_parameters": invalid_params,
+                        "valid_parameters": valid_params[:20] if len(valid_params) > 20 else valid_params,
+                        "hint": f"Total {len(valid_params)} parameters available. Use /fmus/{fmu_id}/metadata to see all."
+                    }
+                )
+            
+            # Apply valid parameters
             param_vrs = []
             param_vals = []
             
             for param_name, param_value in parameters.items():
-                if param_name in vr_map:
-                    param_vrs.append(vr_map[param_name])
-                    param_vals.append(param_value)
-                    logger.info(f"Setting parameter {param_name} = {param_value}")
-                else:
-                    logger.warning(f"Parameter {param_name} not found in FMU")
+                param_vrs.append(vr_map[param_name])
+                param_vals.append(param_value)
+                logger.info(f"Setting parameter {param_name} = {param_value}")
             
             if param_vrs:
                 fmu.setReal(param_vrs, param_vals)

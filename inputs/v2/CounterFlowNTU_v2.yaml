@@ -2,10 +2,11 @@
 # This file defines the API interface for the FMU
 
 metadata:
-  name: "Counter Flow Heat Exchanger"
-  version: "1.0"
-  description: "NTU method heat exchanger model for glycol-air system"
-  author: "FMU Developer"
+  name: "Counter Flow Heat Exchanger - NTU Method (Version 2)"
+  version: "2.0.0"
+  description: "Improved heat exchanger model with enhanced accuracy"
+  author: "Thermal Systems Team"
+  tolerance: 0.0005  # Stricter tolerance for v2
 
 # Parameters: Set once during initialization
 # These are design constants that configure the simulation

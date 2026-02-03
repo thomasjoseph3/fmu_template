@@ -46,83 +46,115 @@ def extract_metadata(fmu_path, output_path):
 
 def run_regression_test(fmu_path, stimuli_path, reference_path, tolerance=1e-3):
     print(f"--- Running Regression Test ---")
+    print(f"FMU: {os.path.basename(fmu_path)}")
     print(f"Stimuli: {os.path.basename(stimuli_path)}")
     print(f"Reference: {os.path.basename(reference_path)}")
+    print(f"Tolerance: {tolerance}")
 
     try:
-        # Load inputs
-        inputs_df = pd.read_csv(stimuli_path)
+        # Validate and load stimuli
+        try:
+            inputs_df = pd.read_csv(stimuli_path)
+        except FileNotFoundError:
+            print(f"❌ ERROR: Stimuli file not found: {stimuli_path}")
+            return False
+        except pd.errors.EmptyDataError:
+            print(f"❌ ERROR: Stimuli file is empty: {stimuli_path}")
+            return False
+        except Exception as e:
+            print(f"❌ ERROR: Failed to parse stimuli CSV: {e}")
+            return False
         
-        # Prepare inputs for FMPy
-        # FMPy expects a structured array or keys that match variable names
-        # We need to ensure 'time' is the first column
+        # Validate 'time' column
         if 'time' not in inputs_df.columns:
-            print("!!! Error: stimuli.csv must have a 'time' column.")
+            print(f"❌ ERROR: stimuli.csv must have a 'time' column")
+            print(f"   Found columns: {list(inputs_df.columns)}")
+            return False
+        
+        # Check for NaN values
+        if inputs_df.isnull().any().any():
+            print(f"❌ ERROR: stimuli.csv contains NaN values")
+            nan_cols = inputs_df.columns[inputs_df.isnull().any()].tolist()
+            print(f"   Columns with NaN: {nan_cols}")
             return False
             
-        # Convert to structured array for FMPy input
-        # Dictionary format: {'variable_name': value_array, 'time': time_array} is not fully supported by simulate_fmu directly in all versions
-        # Standard way: dtype with (name, type)
-        # Simplified: We define input as a structured array
+        # Convert to structured array for FMPy
         dtype = [(c, np.float64) for c in inputs_df.columns]
         input_data = np.array([tuple(x) for x in inputs_df.to_numpy()], dtype=dtype)
 
         # Run Simulation
         print("Executing simulation...")
-        result = simulate_fmu(
-            fmu_path, 
-            input=input_data, 
-            stop_time=inputs_df['time'].iloc[-1],
-            output_interval=None, # Use input interval or default
-            fmi_type='CoSimulation'
-        )
+        try:
+            result = simulate_fmu(
+                fmu_path, 
+                input=input_data, 
+                stop_time=inputs_df['time'].iloc[-1],
+                output_interval=None,
+                fmi_type='CoSimulation'
+            )
+        except Exception as e:
+            print(f"❌ ERROR: Simulation failed: {e}")
+            return False
         
         # Convert result to DataFrame
         result_df = pd.DataFrame(result)
         
-        # Compare with Reference
-        ref_df = pd.read_csv(reference_path)
+        # Validate and load reference
+        try:
+            ref_df = pd.read_csv(reference_path)
+        except FileNotFoundError:
+            print(f"❌ ERROR: Reference file not found: {reference_path}")
+            return False
+        except pd.errors.EmptyDataError:
+            print(f"❌ ERROR: Reference file is empty: {reference_path}")
+            return False
+        except Exception as e:
+            print(f"❌ ERROR: Failed to parse reference CSV: {e}")
+            return False
         
-        # Align data: Interpolate result to match reference time points if needed
-        # For simplicity, we assume reference and result share close time steps or we compare on common columns
+        # Validate reference has required columns
+        if 'time' not in ref_df.columns:
+            print(f"❌ ERROR: reference.csv must have a 'time' column")
+            print(f"   Found columns: {list(ref_df.columns)}")
+            return False
         
         print("Comparing results...")
         passed = True
+        deviations = []
         
         for col in ref_df.columns:
-            if col == 'time': continue
-            if col not in result_df.columns:
-                print(f"Warning: Reference column '{col}' not found in simulation result. Skipping.")
+            if col == 'time': 
                 continue
             
-            # Simple check: Mean Squared Error or Max Deviation
-            # We assume reference has same time grid. If not, complex alignment is needed.
-            # Here we assume the 'reference' is the TRUTH, so we check if result matches it.
-            # If time grids differ significantly, we would need to resample. 
-            # For this standard, we assume specific time points are not enforced unless step size is fixed.
-            # Let's check max deviation on overlapping time range.
+            if col not in result_df.columns:
+                print(f"⚠️  WARNING: Reference column '{col}' not found in simulation result. Skipping.")
+                continue
             
-            # Robust check: Max Absolute Error
-            # We align by index for now (assuming row-by-row correspondence from fixed step)
-            # OR we just check the last value if steady state. 
-            # BETTER: Interpolate result_df to ref_df time points.
+            # Calculate max deviation
+            ref_val = ref_df[col].values
+            sim_val = result_df[col].values[:len(ref_val)]  # Match lengths
             
-            sim_values = np.interp(ref_df['time'], result_df['time'], result_df[col])
-            ref_values = ref_df[col].values
+            max_dev = np.max(np.abs(ref_val - sim_val))
+            deviations.append((col, max_dev))
             
-            diff = np.abs(sim_values - ref_values)
-            max_diff = np.max(diff)
-            
-            if max_diff > tolerance:
-                print(f"!!! FAIL: Variable '{col}' max deviation {max_diff:.6f} > {tolerance}")
+            if max_dev > tolerance:
                 passed = False
+                print(f"❌ FAIL: '{col}' deviation {max_dev:.6f} exceeds tolerance {tolerance}")
+                # Show where the max deviation occurred
+                max_idx = np.argmax(np.abs(ref_val - sim_val))
+                print(f"   At time={ref_df['time'].iloc[max_idx]:.3f}: expected={ref_val[max_idx]:.6f}, got={sim_val[max_idx]:.6f}")
             else:
-                print(f"PASS: Variable '{col}' max diff {max_diff:.6f}")
-
+                print(f"✅ PASS: '{col}' max deviation {max_dev:.6f}")
+        
+        if passed:
+            print(f"✅ Regression test PASSED")
+        else:
+            print(f"❌ Regression test FAILED")
+        
         return passed
-
+        
     except Exception as e:
-        print(f"!!! Simulation/Verification failed: {e}")
+        print(f"❌ UNEXPECTED ERROR: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -150,7 +182,25 @@ def main():
         print(f"\n=== Processing FMU: {fmu_name} ===")
         print(f"Path: {fmu_path}")
         
-        # 1. Look for Local Tests (Sibling directory)
+        # 1. Look for YAML config (for tolerance and version info)
+        yaml_path = os.path.join(fmu_dir, f"{fmu_name}.yaml")
+        tolerance = 1e-3  # Default
+        version_info = "N/A"
+        
+        if os.path.exists(yaml_path):
+            try:
+                import yaml
+                with open(yaml_path, 'r') as f:
+                    config = yaml.safe_load(f)
+                    if config and 'metadata' in config:
+                        tolerance = config['metadata'].get('tolerance', 1e-3)
+                        version_info = config['metadata'].get('version', 'N/A')
+                        print(f"Version: {version_info}")
+                        print(f"Custom tolerance: {tolerance}")
+            except Exception as e:
+                print(f"Warning: Failed to load YAML config: {e}")
+        
+        # 2. Look for Local Tests (Sibling directory)
         fmu_dir = os.path.dirname(fmu_path)
         tests_dir = os.path.join(fmu_dir, "tests")
         stimuli = os.path.join(tests_dir, "stimuli.csv")
@@ -159,7 +209,7 @@ def main():
         current_passed = True
         
         if os.path.exists(stimuli) and os.path.exists(reference):
-            if not run_regression_test(fmu_path, stimuli, reference):
+            if not run_regression_test(fmu_path, stimuli, reference, tolerance=tolerance):
                 current_passed = False
                 all_tests_passed = False
         else:
