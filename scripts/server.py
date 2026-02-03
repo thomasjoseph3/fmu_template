@@ -24,7 +24,7 @@ fmu_paths: Dict[str, str] = {}
 fmu_configs: Dict[str, Dict[str, Any]] = {}  # YAML configs
 
 class StepRequest(BaseModel):
-    inputs: Dict[str, float]
+    inputs: Optional[Dict[str, float]] = None  # Optional for parameter-only mode
     dt: float
 
 class InitRequest(BaseModel):
@@ -245,22 +245,41 @@ def step_simulation(fmu_id: str, request: StepRequest):
     md = fmu_data['md']
     
     try:
-        # 1. Set Inputs
-        # Use stored 'md' instead of 'fmu.modelDescription'
+        # 1. Set Inputs (if provided)
         vr_map = {v.name: v.valueReference for v in md.modelVariables}
         
-        vrs_to_set = []
-        values_to_set = []
-        
-        for name, value in request.inputs.items():
-            if name in vr_map:
-                vrs_to_set.append(vr_map[name])
-                values_to_set.append(value)
-            else:
-                pass # Ignore unknown inputs
-        
-        if vrs_to_set:
-            fmu.setReal(vrs_to_set, values_to_set)
+        if request.inputs:
+            # Validate inputs against YAML config if available
+            if fmu_id in fmu_configs and fmu_configs[fmu_id].get('inputs'):
+                config_input_names = [inp['name'] for inp in fmu_configs[fmu_id]['inputs']]
+                invalid_inputs = [name for name in request.inputs.keys() if name not in config_input_names]
+                
+                if invalid_inputs:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "error": "Invalid input names",
+                            "invalid_inputs": invalid_inputs,
+                            "valid_inputs": config_input_names,
+                            "hint": f"Check YAML config for valid input names or use /fmus/{fmu_id}/metadata"
+                        }
+                    )
+            
+            vrs_to_set = []
+            values_to_set = []
+            
+            for name, value in request.inputs.items():
+                if name in vr_map:
+                    vrs_to_set.append(vr_map[name])
+                    values_to_set.append(value)
+                    logger.debug(f"Setting input {name} = {value}")
+                else:
+                    logger.warning(f"Input '{name}' not found in FMU model variables")
+            
+            if vrs_to_set:
+                fmu.setReal(vrs_to_set, values_to_set)
+        else:
+            logger.debug(f"No inputs provided - running in parameter-only mode")
         
         # 2. Do Step
         current_time = fmu_data['time']
