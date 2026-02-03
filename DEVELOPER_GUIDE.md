@@ -1,239 +1,469 @@
 # FMU Developer Guide
 
-This guide explains how to prepare your Modelica models for the Cloud Simulation Platform.
+## Overview
+This guide explains how to add your FMU to the validation and deployment template.
 
-## 1. Exporting Your FMU
-When exporting from your tool (Dymola, OpenModelica, Simulink, etc.), ensure these settings:
+---
 
-*   **FMI Type**: Co-Simulation (CS).
-*   **FMI Version**: 2.0 or 3.0.
-*   **Binaries**: You **MUST** include `linux64` binaries.
-    *   *Why?* The cloud servers run Linux. Windows-only FMUs will fail.
-    *   *Tip*: In Dymola, select "Binary Model Selection" -> "Linux64" (or use a Docker cross-compiler).
+## Quick Start
 
-## 2. Creating Test Data
-You must prove your model works. We use **CSV files** for this.
+### 1. Package Structure
+Place your FMU in the `inputs/` directory with this structure:
 
-1.  **Stimuli (`tests/stimuli.csv`)**:
-    *   The inputs you used during your design simulation.
-    *   Must have a `time` column.
-    *   Example: `time, inputs.speed, inputs.enable`
-2.  **Reference (`tests/reference.csv`)**:
-    *   The results you got from your local tool.
-    *   We will compare the Cloud output against this to ensure accuracy.
-
-## 3. Packaging
-Your handover package is simply a folder structure. You do not need to write Python code.
-
-1.  Create a folder (e.g., `MyModel_Release_v1`).
-2.  Drop your `.fmu` file at the root.
-3.  Create a `tests` subfolder.
-4.  Drop your CSVs there.
-
-**Final Structure:**
-```text
-/MyModel_Release_v1
-    ├── MyModel.fmu
-    └── tests/
-        ├── stimuli.csv
-        └── reference.csv
+```
+inputs/
+  └── your_model/          # Any folder name (can be version like v1, v2)
+      ├── ModelName.fmu    # Your FMU file
+      ├── ModelName.yaml   # Configuration (required)
+      └── tests/           # Test data (required)
+          ├── stimuli.csv
+          └── reference.csv
 ```
 
-## 4. Verifying Locally
-Before submitting, verify your package using our Validator Tool.
+**Example:**
+```
+inputs/
+  ├── v1/
+  │   ├── HeatExchanger.fmu
+  │   ├── HeatExchanger.yaml
+  │   └── tests/
+  │       ├── stimuli.csv
+  │       └── reference.csv
+  └── v2/
+      ├── HeatExchanger_v2.fmu
+      ├── HeatExchanger_v2.yaml
+      └── tests/...
+```
 
-1.  **Preparation**:
-    *   Open the `fmu_template/inputs/` directory in this repo.
-    *   **Delete** any existing files there.
-    *   **Copy** your `.fmu` file and your `tests/` folder directly into `fmu_template/inputs/`.
+---
 
-    *Correct Structure check:*
-    ```text
-    fmu_template/inputs/
-    ├── MyModel.fmu
-    └── tests/
-        ├── stimuli.csv
-        └── reference.csv
-    ```
-2.  **Run** the check:
-    ```powershell
-    # In the fmu_template directory
-    docker build -t fmu-validator -f docker/Dockerfile .
-    docker run fmu-validator python /app/scripts/run_tests.py
-    ```
+## 2. YAML Configuration
 
-### Interpreting Functionality
-*   **✅ PASSED**: You will see `All Steps Passed`. Your FMU is valid, metadata was extracted, and the server works.
-*   **❌ FAILED**: Read the error log.
-    *   *Simulation Failed*: Your FMU might be crashing on Linux.
-    *   *Deviation > Tolerance*: The cloud results differ from your reference. Check variable units or solver settings.
+The YAML file defines your FMU's API interface and validation behavior.
 
-## 5. Metadata (Automatic)
-You do **not** need to document your variable names manually.
-The system automatically generates a `manifest.json` from your FMU. Ensure you use clear, descriptive variable names in your Modelica model (e.g., `inputs.water_temperature` instead of `u1`).
+### Basic Template
 
-## 6. Creating API Configuration (model.yaml)
-
-The YAML file defines how your FMU is exposed via the REST API. **This file is optional but highly recommended.**
-
-### 6.1 Why You Need This
-
-Without YAML:
-- ❌ Cannot set parameters via API
-- ❌ API returns 100+ variables (slow, confusing)
-- ❌ No documentation for API consumers
-
-With YAML:
-- ✅ Clean, curated API with only relevant variables
-- ✅ Set design parameters dynamically
-- ✅ Self-documenting API with labels and units
-
-### 6.2 Quick Start
-
-1. Create a file named `{your_fmu_name}.yaml` (e.g., if your FMU is `CounterFlowNTU.fmu`, create `CounterFlowNTU.yaml`)
-2. Place it **next to your FMU** in the same directory
-3. Use the template below
-
-**Template:**
 ```yaml
 metadata:
   name: "Your Model Name"
-  version: "1.0"
+  version: "1.0.0"
   description: "Brief description"
-  author: "Your name"
+  author: "Your Team"
+  tolerance: 0.001              # Test tolerance (optional, default: 0.001)
+  supported_modes: ["scenario"] # See modes below
 
 parameters:
-  # List parameters here (if any)
-
-inputs:
-  # List runtime inputs here (if any)
+  - name: param1
+    label: "Parameter Label"
+    description: "What this parameter does"
+    unit: "K"
+    default: 300.0
+    min: 273.0
+    max: 400.0
+    tweakable: true    # Show in UI, allow via API
 
 outputs:
-  # List the important outputs to expose
-  - name: "exact.variable.name.from.fmu"
-    label: "Human-Readable Name"
-    description: "What this measures"
+  - name: output1
+    label: "Output Label"
+    description: "What this output represents"
     unit: "K"
+
+testing:
+  mode: "parameter_based"  # How to test this FMU
 ```
 
-### 6.3 Identifying Your Variables
+---
 
-#### Step 1: Find Variable Names
-Open your FMU in a tool like FMPy GUI or check `modelDescription.xml`:
+## 3. Simulation Modes
+
+Choose the mode that matches your FMU's behavior:
+
+### Mode 1: Scenario (Parameter-Only)
+
+**Use when:** FMU only needs initial parameters, no runtime inputs
+
+**YAML:**
+```yaml
+metadata:
+  supported_modes: ["scenario"]
+
+parameters:
+  - name: design_temp
+    default: 350.0
+    tweakable: true
+
+# NO inputs section!
+
+outputs:
+  - name: outlet_temp
+
+testing:
+  mode: "parameter_based"
+```
+
+**API Usage:**
 ```bash
-python -c "from fmpy import read_model_description; md = read_model_description('MyModel.fmu'); print([v.name for v in md.modelVariables])"
+POST /initialize {"parameters": {"design_temp": 360}}
+POST /step {"dt": 0.1}  # No inputs needed
 ```
 
-#### Step 2: Classify Variables
+**Test Data (stimuli.csv):**
+Not used - validation uses fixed parameters from code.
 
-Ask yourself: **"Can this change during runtime?"**
+---
 
-| Variable Type | Classification | YAML Section |
-|--------------|----------------|--------------|
-| Pipe diameter | ❌ Cannot change | `parameters` |
-| Heater capacity | ❌ Cannot change | `parameters` |
-| Inlet temperature (design) | ❌ Cannot change (parameter) | `parameters` |
-| Inlet temperature (sensor) | ✅ Changes every second | `inputs` |
-| Valve position | ✅ Control signal | `inputs` |
-| Outlet temperature | 📊 Reading | `outputs` |
+### Mode 2: Digital Twin (Input-Based)
 
-### 6.4 Example: Scenario Testing Model (Parameters Only)
+**Use when:** FMU accepts changing sensor data at each time step
 
-If your FMU is for **design validation** (not real-time), you only have parameters:
-
+**YAML:**
 ```yaml
 metadata:
-  name: "Heat Exchanger Design Validator"
-  version: "1.0"
+  supported_modes: ["digital_twin"]
 
 parameters:
-  - name: "fluid_A.T_inlet"
-    label: "Hot Fluid Inlet Temp"
-    description: "Design inlet temperature for hot side"
-    unit: "K"
-    default: 333.15
-  
-  - name: "fluid_B.T_inlet"
-    label: "Cold Fluid Inlet Temp"
-    unit: "K"
-    default: 293.15
-
-inputs: []  # No runtime inputs
-
-outputs:
-  - name: "sensor.T_out_hot"
-    label: "Hot Outlet Temp"
-    unit: "K"
-  
-  - name: "sensor.T_out_cold"
-    label: "Cold Outlet Temp"
-    unit: "K"
-```
-
-**Use Case:** Testing different design scenarios. API user sets temperatures once and runs simulation.
-
-### 6.5 Example: Digital Twin (Runtime Inputs)
-
-If your FMU will be connected to **live sensors**, you need runtime inputs:
-
-```yaml
-metadata:
-  name: "Centrifugal Pump Digital Twin"
-  version: "1.0"
-
-parameters:
-  - name: "pump.impeller_diameter"
-    label: "Impeller Diameter"
-    description: "Physical pump design parameter"
-    unit: "m"
-    default: 0.2
+  - name: heat_capacity
+    default: 1000.0
+    tweakable: false  # Fixed design parameter
 
 inputs:
-  - name: "pump.speed_cmd"
-    label: "Motor Speed Setpoint"
-    description: "Live control signal from PLC"
-    unit: "rpm"
-  
-  - name: "fluid.inlet_pressure"
-    label: "Inlet Pressure Sensor"
-    description: "Live sensor reading"
-    unit: "Pa"
+  - name: sensor_temp
+    label: "Temperature Sensor"
+    unit: "K"
+    required: true      # Must provide at each step
+    expected_range: [273, 400]
+    
+  - name: flow_rate
+    label: "Flow Sensor"
+    unit: "kg/s"
+    required: false     # Optional - uses default
+    default: 0.5
 
 outputs:
-  - name: "pump.flow_rate"
-    label: "Flow Rate"
-    unit: "m3/h"
-  
-  - name: "pump.power_consumption"
-    label: "Electrical Power"
-    unit: "kW"
+  - name: predicted_temp
+
+testing:
+  mode: "input_based"
 ```
 
-**Use Case:** Real-time simulation. API user sends fresh sensor data every 100ms.
+**API Usage:**
+```bash
+POST /initialize {"parameters": {"heat_capacity": 1000}}
+POST /step {"dt": 1.0, "inputs": {"sensor_temp": 355.2, "flow_rate": 0.6}}
+POST /step {"dt": 1.0, "inputs": {"sensor_temp": 358.1, "flow_rate": 0.65}}
+```
 
-### 6.6 Critical Rule: Modelica Variables Must Match
+**Test Data (stimuli.csv):**
+```csv
+time,sensor_temp,flow_rate
+0.0,353.15,0.5
+1.0,355.0,0.52
+2.0,357.5,0.55
+```
 
-> [!CAUTION]
-> **The FMU must have actual input connectors for runtime inputs.**
-> 
-> ❌ **Wrong (Parameter):**
-> ```modelica
-> parameter Real T_inlet = 300;  // This is a constant!
-> ```
-> 
-> ✅ **Correct (Runtime Input):**
-> ```modelica
-> Modelica.Blocks.Interfaces.RealInput T_inlet;  // This can change!
-> ```
+---
 
-If you only have parameters in your FMU, do NOT list them under `inputs:` in the YAML. Use `parameters:` instead.
+### Mode 3: Hybrid
 
-### 6.7 Packaging Checklist
+**Use when:** FMU supports both parameter variations AND runtime inputs
 
-Before submitting, verify:
-- [ ] YAML filename matches FMU filename (e.g., `MyModel.fmu` → `MyModel.yaml`)
-- [ ] All variable names in YAML exactly match names in FMU
-- [ ] Variables are classified correctly (parameters vs inputs)
-- [ ] At least 2-3 key outputs are listed (don't list all 100 variables)
-- [ ] Units are specified for all variables
-- [ ] YAML file is placed in the same directory as the FMU
+**YAML:**
+```yaml
+metadata:
+  supported_modes: ["scenario", "digital_twin"]
+
+parameters:
+  - name: design_capacity
+    tweakable: true
+
+inputs:
+  - name: sensor_reading
+    required: false  # Can run without inputs
+
+outputs:
+  - name: result
+```
+
+**API Usage:**
+```bash
+# As scenario: vary parameters, no inputs
+POST /initialize {"parameters": {"design_capacity": 1000}}
+POST /step {"dt": 0.1}
+
+# As digital twin: fixed parameter, varying inputs
+POST /initialize {"parameters": {"design_capacity": 1000}}
+POST /step {"dt": 1.0, "inputs": {"sensor_reading": 355}}
+```
+
+---
+
+## 4. YAML Field Reference
+
+### metadata
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Display name |
+| `version` | Yes | Semantic version (e.g., "1.0.0") |
+| `description` | Yes | Brief description |
+| `author` | No | Team/person name |
+| `tolerance` | No | Test tolerance (default: 0.001) |
+| `supported_modes` | Yes | `["scenario"]`, `["digital_twin"]`, or both |
+
+### parameters
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Exact FMU parameter name |
+| `label` | Yes | Human-readable name |
+| `description` | Yes | What it does |
+| `unit` | No | Physical unit |
+| `default` | Yes | Default value |
+| `min` | No | Minimum allowed value |
+| `max` | No | Maximum allowed value |
+| `tweakable` | Yes | `true`: show in UI, `false`: advanced only |
+
+### inputs (Digital Twin mode only)
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Exact FMU input name |
+| `label` | Yes | Human-readable name |
+| `description` | Yes | What it represents |
+| `unit` | No | Physical unit |
+| `required` | Yes | `true`: must provide, `false`: optional |
+| `default` | If !required | Default if not provided |
+| `expected_range` | No | `[min, max]` for validation |
+
+### outputs
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Exact FMU output name |
+| `label` | Yes | Human-readable name |
+| `description` | Yes | What it represents |
+| `unit` | No | Physical unit |
+
+### testing
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `mode` | Yes | `"parameter_based"` or `"input_based"` |
+
+---
+
+## 5. Test Data
+
+### reference.csv (Always Required)
+
+Contains expected output values for validation.
+
+**Format:**
+```csv
+time,output1,output2,...
+0.0,340.5,1500.2
+0.1,342.1,1520.5
+```
+
+- First column: `time`
+- Other columns: Must match `outputs` names in YAML
+- Values: Expected simulation results
+
+### stimuli.csv (Mode-Dependent)
+
+**For input_based mode:**
+```csv
+time,input1,input2,...
+0.0,353.15,0.5
+1.0,355.0,0.52
+```
+- First column: `time`
+- Other columns: Must match `inputs` names in YAML
+- Values: Input time series
+
+**For parameter_based mode:**
+Not used directly - validation uses parameters from code.
+
+---
+
+## 6. Finding FMU Variable Names
+
+Your FMU contains a `modelDescription.xml` file with all variable names.
+
+**Option 1: Extract and inspect**
+```bash
+unzip YourModel.fmu
+cat modelDescription.xml
+```
+
+**Option 2: Use validation (will generate manifest)**
+```bash
+make validate
+# Creates YourModel_manifest.json with all variables
+```
+
+**Option 3: Use API (after adding FMU)**
+```bash
+GET /fmus/YourModel/metadata
+# Returns all parameters, inputs, outputs
+```
+
+---
+
+## 7. Workflow
+
+1. **Export FMU** from your modeling tool (Modelica, Simulink, etc.)
+   - Must include Linux64 binaries
+   - FMI 2.0 Co-Simulation
+
+2. **Create folder** in `inputs/`
+   ```bash
+   mkdir inputs/my_model
+   ```
+
+3. **Copy FMU**
+   ```bash
+   cp MyModel.fmu inputs/my_model/
+   ```
+
+4. **Create YAML**
+   ```bash
+   # Use one of the mode templates above
+   nano inputs/my_model/MyModel.yaml
+   ```
+
+5. **Create test data**
+   ```bash
+   mkdir inputs/my_model/tests
+   # Create stimuli.csv and reference.csv
+   ```
+
+6. **Validate**
+   ```bash
+   make validate
+   # or
+   make setup && source venv/bin/activate && python scripts/run_tests.py
+   ```
+
+7. **If validation passes:**
+   - FMU is ready!
+   - Commit to Git
+   - CI/CD will auto-deploy
+
+---
+
+## 8. Common Issues
+
+### "Parameter X not found"
+- Check exact spelling in YAML vs FMU
+- Use `GET /fmus/Model/manifest` to see available names
+
+### "Validation fails with large deviation"
+- Adjust `tolerance` in YAML metadata
+- Check if reference.csv values are correct
+
+### "Input X not found"
+- Ensure input exists in FMU
+- Check causality is 'input' not 'parameter'
+
+### "No FMUs discovered"
+- YAML filename must match FMU filename
+- FMU must be in `inputs/**/*.fmu`
+
+---
+
+## 9. Best Practices
+
+✅ **Use semantic versioning** (1.0.0, 1.1.0, 2.0.0)  
+✅ **Set realistic tolerances** (0.001 for steady-state, 0.01 for transient)  
+✅ **Mark tweakable=false** for advanced parameters  
+✅ **Provide meaningful descriptions** for auto-generated docs  
+✅ **Test with representative data** matching real operating conditions  
+✅ **Use v1/, v2/ folders** to maintain multiple versions  
+
+---
+
+## 10. Example: Complete Package
+
+```
+inputs/v1/
+├── PumpModel.fmu
+├── PumpModel.yaml
+└── tests/
+    ├── stimuli.csv
+    └── reference.csv
+```
+
+**PumpModel.yaml:**
+```yaml
+metadata:
+  name: "Centrifugal Pump Model"
+  version: "1.0.0"
+  description: "Variable speed pump with efficiency curve"
+  tolerance: 0.002
+  supported_modes: ["digital_twin"]
+
+parameters:
+  - name: pump.rated_capacity
+    label: "Rated Capacity"
+    unit: "m³/h"
+    default: 100.0
+    tweakable: false
+
+  - name: pump.rated_head
+    label: "Rated Head"
+    unit: "m"
+    default: 50.0
+    tweakable: true
+
+inputs:
+  - name: speed_setpoint
+    label: "Speed Command"
+    description: "From VFD controller"
+    unit: "RPM"
+    required: true
+    expected_range: [0, 3600]
+
+  - name: suction_pressure
+    label: "Suction Pressure"
+    description: "From pressure sensor"
+    unit: "bar"
+    required: false
+    default: 1.0
+
+outputs:
+  - name: flow_rate
+    label: "Flow Rate"
+    unit: "m³/h"
+
+  - name: power_consumption
+    label: "Power"
+    unit: "kW"
+
+testing:
+  mode: "input_based"
+```
+
+**tests/stimuli.csv:**
+```csv
+time,speed_setpoint,suction_pressure
+0.0,1000,1.0
+1.0,1500,1.05
+2.0,2000,1.1
+```
+
+**tests/reference.csv:**
+```csv
+time,flow_rate,power_consumption
+0.0,33.5,2.1
+1.0,50.2,4.5
+2.0,67.0,8.2
+```
+
+---
+
+## Need Help?
+
+- Check [API_DOCUMENTATION.md](API_DOCUMENTATION.md) for endpoint details
+- See [SETUP_AND_USAGE.md](SETUP_AND_USAGE.md) for testing commands
+- Review existing examples in `inputs/v1/` and `inputs/v2/`

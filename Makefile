@@ -10,6 +10,7 @@ IMAGE_NAME = fmu-validator
 help:
 	@echo "FMU Template - Available Commands:"
 	@echo ""
+	@echo "  make setup         - Create virtual environment & install dependencies (Linux)"
 	@echo "  make validate      - Run FMU validation tests (auto-builds if needed)"
 	@echo "  make run-server    - Start the REST API server (auto-builds if needed)"
 	@echo "  make test-api      - Run API smoke tests"
@@ -17,6 +18,18 @@ help:
 	@echo "  make clean         - Stop all containers and clean up"
 	@echo "  make logs          - Show server logs"
 	@echo "  make stop          - Stop the running server"
+	@echo ""
+
+# Setup virtual environment (Linux only)
+setup:
+	@echo "=== Setting Up Virtual Environment ==="
+	python3 -m venv venv
+	./venv/bin/pip install --upgrade pip
+	./venv/bin/pip install -r requirements.txt
+	@echo "✅ Setup complete!"
+	@echo ""
+	@echo "To activate: source venv/bin/activate"
+	@echo "To test locally: python scripts/run_tests.py"
 	@echo ""
 
 # Check if image exists, build only if missing
