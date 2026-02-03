@@ -1,0 +1,169 @@
+metadata:
+  name: "Biomass Boiler Digital Twin"
+  version: "1.0.0"
+  description: "5-mill biomass boiler with NOx level-weighted modeling"
+  author: "Your Team"
+  tolerance: 0.01
+  supported_modes: ["scenario"]
+
+parameters:
+  - name: feeder1_flow
+    label: "Feeder 1 Flow Rate"
+    description: "Mill 1 fuel feed rate"
+    unit: "kg/s"
+    default: 5.0
+    min: 0.0
+    max: 10.0
+    tweakable: true
+
+  - name: feeder2_flow
+    label: "Feeder 2 Flow Rate"
+    description: "Mill 2 fuel feed rate"
+    unit: "kg/s"
+    default: 5.0
+    min: 0.0
+    max: 10.0
+    tweakable: true
+
+  - name: feeder3_flow
+    label: "Feeder 3 Flow Rate"
+    description: "Mill 3 fuel feed rate"
+    unit: "kg/s"
+    default: 5.0
+    min: 0.0
+    max: 10.0
+    tweakable: true
+
+  - name: feeder4_flow
+    label: "Feeder 4 Flow Rate"
+    description: "Mill 4 fuel feed rate"
+    unit: "kg/s"
+    default: 0.0
+    min: 0.0
+    max: 10.0
+    tweakable: true
+
+  - name: feeder5_flow
+    label: "Feeder 5 Flow Rate"
+    description: "Mill 5 fuel feed rate"
+    unit: "kg/s"
+    default: 0.0
+    min: 0.0
+    max: 10.0
+    tweakable: true
+
+  - name: fuel_moisture
+    label: "Fuel Moisture Content"
+    description: "Biomass moisture percentage"
+    unit: "%"
+    default: 40.0
+    min: 10.0
+    max: 60.0
+    tweakable: true
+
+  - name: fuel_LHV
+    label: "Fuel Lower Heating Value"
+    description: "Energy content of fuel"
+    unit: "MJ/kg"
+    default: 17.5
+    min: 10.0
+    max: 25.0
+    tweakable: true
+
+  - name: primaryAir_flow
+    label: "Primary Air Flow"
+    description: "Primary air to mills"
+    unit: "kg/s"
+    default: 55.0
+    min: 20.0
+    max: 100.0
+    tweakable: true
+
+  - name: primaryAir_temp
+    label: "Primary Air Temperature"
+    description: "Temperature of primary air"
+    unit: "°C"
+    default: 25.0
+    min: 15.0
+    max: 50.0
+    tweakable: false
+
+  - name: secondaryAir_flow
+    label: "Secondary Air Flow"  
+    description: "Secondary air injection"
+    unit: "kg/s"
+    default: 45.0
+    min: 20.0
+    max: 80.0
+    tweakable: true
+
+  - name: overfireAir_flow
+    label: "Overfire Air Flow"
+    description: "NOx reduction air"
+    unit: "kg/s"
+    default: 10.0
+    min: 0.0
+    max: 30.0
+    tweakable: true
+
+  - name: fgr_percent
+    label: "Flue Gas Recirculation"
+    description: "Percentage of flue gas recirculated"
+    unit: "%"
+    default: 8.0
+    min: 0.0
+    max: 20.0
+    tweakable: true
+
+  - name: target_MW
+    label: "Target Power Output"
+    description: "Desired MW output"
+    unit: "MW"
+    default: 80.0
+    min: 40.0
+    max: 120.0
+    tweakable: true
+
+outputs:
+  - name: boiler.efficiencyPercent
+    label: "Boiler Efficiency"
+    description: "Overall boiler efficiency"
+    unit: "%"
+
+  - name: boiler.furnacePressurePa
+    label: "Furnace Draft"
+    description: "Furnace pressure"
+    unit: "Pa"
+
+  - name: furnace.exitGasTemperatureC
+    label: "Furnace Exit Temperature"
+    description: "Gas temperature leaving furnace"
+    unit: "°C"
+
+  - name: furnace.o2Percent
+    label: "Furnace O2"
+    description: "Oxygen in furnace"
+    unit: "%"
+
+  - name: flueGas.coPpm
+    label: "CO Emissions"
+    description: "Carbon monoxide concentration"
+    unit: "ppm"
+
+  - name: flueGas.noxMgPerNm3
+    label: "NOx Emissions"
+    description: "Nitrogen oxides concentration"
+    unit: "mg/Nm³"
+
+  - name: steam.massFlowRateKgPerS
+    label: "Steam Flow"
+    description: "Steam generation rate"
+    unit: "kg/s"
+
+  - name: turbine.powerOutputMW
+    label: "Power Output"
+    description: "Gross electrical power"
+    unit: "MW"
+
+testing:
+  mode: "parameter_based"

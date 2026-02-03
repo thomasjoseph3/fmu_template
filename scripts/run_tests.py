@@ -182,6 +182,9 @@ def main():
         print(f"\n=== Processing FMU: {fmu_name} ===")
         print(f"Path: {fmu_path}")
         
+        # Get FMU directory first
+        fmu_dir = os.path.dirname(fmu_path)
+        
         # 1. Look for YAML config (for tolerance and version info)
         yaml_path = os.path.join(fmu_dir, f"{fmu_name}.yaml")
         tolerance = 1e-3  # Default

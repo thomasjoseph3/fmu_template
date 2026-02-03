@@ -1,0 +1,226 @@
+# FMU Delivery Guidelines
+
+## Overview
+
+We have established a **standardized FMU deployment pipeline** that automatically validates, tests, and deploys FMU models as REST APIs. This system **does not require Modelica files or model source code** - only the compiled FMU package with configuration files.
+
+---
+
+## 📦 Expected FMU Package Structure
+
+For each FMU model, we expect a **complete package** in the following structure:
+
+```
+inputs/v1/                        # Version folder (v1, v2, etc.)
+├── ModelName.fmu                 # Compiled FMU file (FMI 2.0 Co-Simulation)
+├── ModelName.yaml                # Configuration file (required)
+└── tests/                        # Test data folder (required)
+    ├── stimuli.csv              # Test input data
+    └── reference.csv            # Expected output data
+```
+
+### Example: Biomass Boiler Package
+```
+inputs/v1/
+├── DigitalTwin.fmu              # Your compiled FMU
+├── DigitalTwin.yaml             # Config with parameters, inputs, outputs
+└── tests/
+    ├── stimuli.csv              # Test scenario inputs
+    └── reference.csv            # Expected results for validation
+```
+
+---
+
+## 📄 Required Files
+
+### 1. **FMU File** ([.fmu](file:///c:/Users/tj089/Desktop/fmu/fmu_template/boiler/DigitalTwin.fmu))
+- **Format**: FMI 2.0 Co-Simulation standard
+- **Platform**: Must include **Linux64 binaries** (for Docker deployment)
+- **Source**: Exported from Modelica/Simulink/OpenModelica
+- **Content**: Pre-compiled model (we do NOT need source [.mo](file:///c:/Users/tj089/Desktop/fmu/fmu_template/boiler/BiomassBoiler.mo) files)
+
+> ✅ **We accept the FMU as-is** - no model building or compilation on our side
+
+---
+
+### 2. **YAML Configuration** (`ModelName.yaml`)
+
+Defines the model's API interface, parameters, and validation settings.
+
+**Template:**
+```yaml
+metadata:
+  name: "Model Display Name"
+  version: "1.0.0"
+  description: "Brief description of what the model does"
+  author: "Team/Engineer Name"
+  tolerance: 0.01                    # Validation tolerance
+  supported_modes: ["scenario"]     # or ["digital_twin"] for real-time mode
+
+parameters:
+  - name: param_name                # Exact FMU parameter name
+    label: "Parameter Display Name"
+    description: "What this parameter controls"
+    unit: "kg/s"
+    default: 5.0
+    min: 0.0
+    max: 10.0
+    tweakable: true                 # Show in UI/API
+
+outputs:
+  - name: output_name               # Exact FMU output name
+    label: "Output Display Name"
+    description: "What this output represents"
+    unit: "MW"
+```
+
+**Required Fields:**
+- [metadata](file:///c:/Users/tj089/Desktop/fmu/fmu_template/scripts/server.py#91-122): version, description, tolerance
+- `parameters`: All tweakable parameters with defaults and ranges
+- `outputs`: Key outputs to expose via API
+
+> 📌 **Variable names must match exactly** what's in the FMU's `modelDescription.xml`
+
+---
+
+### 3. **Test Files** (`tests/*.csv`)
+
+Used for automated validation (regression testing).
+
+#### **stimuli.csv** - Test Inputs
+```csv
+time,param1,param2,...
+0.0,5.0,40.0
+100.0,5.5,42.0
+200.0,6.0,45.0
+```
+
+#### **reference.csv** - Expected Outputs
+```csv
+time,output1,output2,...
+0.0,85.5,75.0
+100.0,86.0,76.5
+200.0,86.5,77.8
+```
+
+> 💡 **Tip**: Generate [reference.csv](file:///c:/Users/tj089/Desktop/fmu/fmu_template/inputs/v1/tests/reference.csv) by running the FMU once with the stimuli and saving the results
+
+---
+
+## 🔄 How It Works - System Workflow
+
+### **Step 1: Delivery**
+Modeling team provides the FMU package:
+```
+inputs/v2/BoilerModel.fmu + BoilerModel.yaml + tests/*.csv
+```
+
+### **Step 2: Validation**
+System automatically:
+1. ✅ Loads the FMU file
+2. ✅ Validates YAML configuration
+3. ✅ Runs regression tests (stimuli → reference comparison)
+4. ✅ Generates API documentation
+5. ✅ Performs health checks
+
+**Command:**
+```bash
+make validate
+```
+
+**Output:**
+```
+=== Processing FMU: BoilerModel ===
+Version: 1.0.0
+✅ PASS: 'efficiency' max deviation 0.0023
+✅ PASS: 'power_output' max deviation 0.0156
+✅ Regression test PASSED
+✅ All Steps Passed
+```
+
+### **Step 3: Deployment**
+Once validated, the FMU is automatically deployed as a REST API:
+
+**API Endpoints:**
+```bash
+GET  /fmus                           # List all models
+GET  /fmus/BoilerModel/metadata      # Get model info
+POST /fmus/BoilerModel/initialize    # Start simulation
+POST /fmus/BoilerModel/step          # Run simulation step
+```
+
+**Example Usage:**
+```bash
+# Initialize with parameters
+POST /fmus/BoilerModel/initialize
+{
+  "parameters": {
+    "fuel_flow": 5.0,
+    "air_flow": 45.0
+  }
+}
+
+# Run simulation
+POST /fmus/BoilerModel/step
+{
+  "dt": 1.0,
+  "inputs": {
+    "sensor_temp": 1050.5
+  }
+}
+
+# Response
+{
+  "time": 1.0,
+  "outputs": {
+    "efficiency": 86.2,
+    "power_output": 76.5,
+    "nox_emissions": 360.0
+  }
+}
+```
+
+---
+
+## ✅ Delivery Checklist for Modeling Team
+
+For each FMU delivery, please ensure:
+
+- [ ] **FMU file** is FMI 2.0 Co-Simulation with Linux64 binaries
+- [ ] **YAML file** matches FMU variable names exactly
+- [ ] **YAML** includes all important parameters and outputs
+- [ ] **stimuli.csv** covers typical operating scenarios
+- [ ] **reference.csv** has validated expected outputs
+- [ ] **Version folder** (v1, v2, etc.) is used for tracking changes
+- [ ] **Test the package** - run the FMU once to verify it works
+
+---
+
+## 🚀 Benefits of This Approach
+
+| Benefit | Description |
+|---------|-------------|
+| **Zero Recompilation** | We deploy FMUs as-is, no build environment needed |
+| **Automated Testing** | Every FMU is regression-tested before deployment |
+| **Version Control** | Multiple versions can run side-by-side (v1, v2, v3) |
+| **Instant API** | FMU becomes a microservice automatically |
+| **CI/CD Ready** | Validates on every commit, deploys on pass |
+
+---
+
+## 📞 Support
+
+**Questions?** 
+- See full documentation: [DEVELOPER_GUIDE.md](file:///c:/Users/tj089/Desktop/fmu/fmu_template/DEVELOPER_GUIDE.md)
+- Example packages: `inputs/v1/` and `inputs/v2/`
+- Contact: [Your Team]
+
+---
+
+## Summary
+
+> **We do NOT need Modelica source files or model dependencies.**  
+> **We only need: FMU + YAML + Test CSVs**  
+> **System handles everything else: validation, deployment, API generation.**
+
+This standardized approach ensures every FMU is thoroughly tested, properly documented, and production-ready before deployment.
